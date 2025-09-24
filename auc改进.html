@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>AUC 之美 · 一眼看懂模型排序力</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        /* ----- 全局配色 ------ */
+        :root {
+            --grad-left: #5c6bc0;
+            --grad-right: #29b6f6;
+            --accent: #ff7043;
+            --bg: #e3f2fd;
+            --card: rgba(255, 255, 255, 0.8);
+        }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+        }
+        body {
+            background: linear-gradient(135deg, var(--bg) 0%, #bbdefb 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #263238;
+        }
+        h1, h2 {
+            text-align: center;
+            margin: 10px 0 20px;
+        }
+        h1 {
+            font-size: 2.8em;
+            color: var(--grad-left);
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        h2 {
+            font-size: 1.8em;
+            color: var(--grad-right);
+            border-bottom: 3px solid var(--grad-right);
+            display: inline-block;
+            padding-bottom: 5px;
+        }
+        .container {
+            max-width: 900px;
+            margin: auto;
+            background: var(--card);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+        }
+        .section {
+            margin: 30px 0;
+        }
+        .formula {
+            background: rgba(255, 245, 157, 0.4);
+            border-left: 5px solid #ffd600;
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 1.3em;
+            text-align: center;
+            margin: 15px 0;
+            font-weight: bold;
+            color: #1a237e;
+        }
+        .controls {
+            text-align: center;
+            margin: 15px 0;
+        }
+        button {
+            background: linear-gradient(to right, var(--grad-right), var(--grad-left));
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 30px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+            transition: all 0.3s ease;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 15px rgba(0, 0, 0, 0.2);
+        }
+        canvas {
+            display: block;
+            margin: 15px auto;
+            border: 2px solid var(--grad-left);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        }
+        .legend {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin: 5px 15px;
+            background: rgba(255, 255, 255, 0.7);
+            padding: 5px 10px;
+            border-radius: 20px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+        }
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            margin-right: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .note {
+            background: rgba(200, 230, 201, 0.4);
+            border-left: 5px solid #66bb6a;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 15px 0;
+            font-size: 1.05em;
+        }
+        .note strong {
+            color: #2e7d32;
+        }
+        ul {
+            padding-left: 25px;
+            line-height: 1.7;
+        }
+        .highlight {
+            background: linear-gradient(120deg, #80deea 0%, #4dd0e1 100%);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: bold;
+            color: #01579b;
+        }
+        .example {
+            background: rgba(255, 255, 255, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            margin: 15px 0;
+            font-size: 1.05em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 AUC 之美 · 一眼看懂模型排序力</h1>
+
+        <div class="section">
+            <div class="formula">
+                AUC = ROC 曲线下面积 = P( score(正) &gt; score(负) )
+            </div>
+            <p style="text-align:center; font-size:1.1em;">
+                随机抽一个<strong>正样本</strong>和一个<strong>负样本</strong>，模型给正样本打分更高的概率
+            </p>
+        </div>
+
+        <div class="section">
+            <h2>🎮 动手玩 AUC</h2>
+            <div class="controls">
+                <button onclick="setNoise(0.05)">完美近似　AUC≈0.98</button>
+                <button onclick="setNoise(0.25)">中等重叠　AUC≈0.75</button>
+                <button onclick="setNoise(0.8)">高度重叠　AUC≈0.52</button>
+                <button onclick="setNoise(5)">随机混淆　AUC≈0.50</button>
+            </div>
+            <canvas id="rocCanvas" width="700" height="350"></canvas>
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color" style="background:#5c6bc0;"></div>
+                    <span>正样本分布</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background:#ff7043;"></div>
+                    <span>负样本分布</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background:#29b6f6;"></div>
+                    <span>ROC 曲线</span>
+                </div>
+            </div>
+            <p style="text-align:center; font-size:1.3em;">
+                当前 AUC = <span id="aucVal" class="highlight">0.98</span>
+            </p>
+        </div>
+
+        <div class="section">
+            <h2>📊 秒懂三段式</h2>
+            <ul>
+                <li><span class="highlight">TPR（真正率）</span>：抓到的正例 / 全部正例　→　越高越好</li>
+                <li><span class="highlight">FPR（假正率）</span>：误杀的负例 / 全部负例　→　越低越好</li>
+                <li><span class="highlight">AUC</span>：不同阈值下 (FPR, TPR) 连成的曲线下面积，综合评判排序能力</li>
+            </ul>
+            <div class="note">
+                <strong>极端举例</strong><br>
+                AUC = 1　→　正负分数完全不重叠，完美排序<br>
+                AUC = 0.5　→　正负分数混在一起，≈随机猜<br>
+                AUC &lt; 0.5　→　模型反向排序，把负例打分更高（可反转预测得到 AUC &gt; 0.5）
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>🛠 代码 30 秒复现</h2>
+            <div class="note">
+                <pre style="background:#263238;color:#aed581;padding:10px;border-radius:8px;overflow-x:auto;">
+from sklearn.metrics import roc_auc_score
+auc = roc_auc_score(y_true, y_score)
+print(auc)
+                </pre>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>📝 实例：体检异常指标识别</h2>
+            <div class="example">
+                <strong>背景：</strong> 1000 人做血常规，其中 100 人真实患病（正例）。<br>
+                <strong>模型输出：</strong> 每个人患病的概率分数。<br>
+                <strong>结果：</strong>
+                <ul>
+                    <li>AUC = 0.92　→　随机抽一个患者和正常人，92 % 情况下患者得分更高，模型优秀。</li>
+                    <li>AUC = 0.51　→　几乎随机，需要重调特征或换算法。</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('rocCanvas');
+        const ctx = canvas.getContext('2d');
+        let noiseLevel = 0.05;
+
+        /* ---------- 绘图 ---------- */
+        function drawScene() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            /* 生成正态分数 */
+            function rnorm(mean, sd) { return mean + sd * (Math.sqrt(-2 * Math.log(Math.random())) * Math.cos(2 * Math.PI * Math.random())); }
+            const posScores = [], negScores = [];
+            for (let i = 0; i < 500; i++) posScores.push(rnorm(0.8, noiseLevel));
+            for (let i = 0; i < 500; i++) negScores.push(rnorm(0.2, noiseLevel));
+
+            /* 计算 ROC */
+            const all = [];
+            posScores.forEach(s => all.push({ score: s, label: 1 }));
+            negScores.forEach(s => all.push({ score: s, label: 0 }));
+            all.sort((a, b) => b.score - a.score);
+            let tp = 0, fp = 0, fpr = [], tpr = [];
+            const posTotal = posScores.length, negTotal = negScores.length;
+            for (let i = 0; i < all.length; i++) {
+                if (all[i].label === 1) tp++; else fp++;
+                tpr.push(tp / posTotal);
+                fpr.push(fp / negTotal);
+            }
+            /* 梯形法算 AUC */
+            let auc = 0;
+            for (let i = 1; i < fpr.length; i++) {
+                auc += (fpr[i] - fpr[i - 1]) * (tpr[i] + tpr[i - 1]) / 2;
+            }
+            document.getElementById('aucVal').textContent = auc.toFixed(2);
+
+            /* 画坐标 */
+            function gx(x) { return 50 + x * 600; }
+            function gy(y) { return 300 - y * 250; }
+            ctx.strokeStyle = '#1a237e'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(50, 300); ctx.lineTo(650, 300); ctx.moveTo(50, 300); ctx.lineTo(50, 50); ctx.stroke();
+            ctx.font = '14px Arial'; ctx.fillStyle = '#1a237e'; ctx.textAlign = 'center';
+            for (let i = 0; i <= 10; i++) { const x = i / 10, y = i / 10; ctx.fillText(x.toFixed(1), gx(x), 320); ctx.fillText(y.toFixed(1), 40, gy(y) + 5); }
+
+            /* 画对角线 */
+            ctx.strokeStyle = '#90a4ae'; ctx.lineWidth = 2; ctx.setLineDash([5, 5]);
+            ctx.beginPath(); ctx.moveTo(50, 300); ctx.lineTo(650, 50); ctx.stroke(); ctx.setLineDash([]);
+
+            /* 画 ROC */
+            ctx.strokeStyle = '#29b6f6'; ctx.lineWidth = 4;
+            ctx.beginPath();
+            for (let i = 0; i < fpr.length; i++) {
+                const x = gx(fpr[i]), y = gy(tpr[i]);
+                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+
+            /* 填充面积 */
+            ctx.globalAlpha = 0.2;
+            ctx.fillStyle = '#29b6f6';
+            ctx.beginPath(); ctx.moveTo(50, 300);
+            for (let i = 0; i < fpr.length; i++) ctx.lineTo(gx(fpr[i]), gy(tpr[i]));
+            ctx.lineTo(650, 50); ctx.lineTo(650, 300); ctx.closePath(); ctx.fill();
+            ctx.globalAlpha = 1;
+
+            /* 分布直方 */
+            const bin = 25, posHist = new Array(bin).fill(0), negHist = new Array(bin).fill(0);
+            function binIdx(score) { return Math.min(Math.floor(score * bin), bin - 1); }
+            posScores.forEach(s => posHist[binIdx(s / 1)]++);
+            negScores.forEach(s => negHist[binIdx(s / 1)]++);
+            const barW = 600 / bin;
+            for (let i = 0; i < bin; i++) {
+                const hPos = posHist[i] / 5, hNeg = negHist[i] / 5;
+                ctx.fillStyle = '#5c6bc0'; ctx.fillRect(50 + i * barW, 300 - hPos, barW - 2, hPos);
+                ctx.fillStyle = '#ff7043'; ctx.fillRect(50 + i * barW, 300, barW - 2, hNeg);
+            }
+        }
+
+        function setNoise(n) { noiseLevel = n; drawScene(); }
+
+        /* 初始 */
+        drawScene();
+        canvas.addEventListener('click', drawScene);
+    </script>
+</body>
+</html>
